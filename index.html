@@ -1854,7 +1854,7 @@
                                 <span>Snel uitlenen in de klas</span>
                             </div>
                             <p class="text-brand-700 leading-relaxed">
-                                Klik in de catalogus op een boek ➔ <em>'Dit boek uitlenen'</em> ➔ voer de code <code class="font-bold font-mono text-brand-900 display-teacher-pin">donbosco</code> in ➔ selecteer leerling en klas.
+                                Klik in de catalogus op een boek ➔ <em>'Dit boek uitlenen'</em> ➔ voer de leerkrachtcode in ➔ selecteer leerling en klas.
                             </p>
                         </div>
                         <div class="p-4 rounded-2xl bg-amber-50/70 border border-amber-100 space-y-2">
@@ -1893,7 +1893,7 @@
                                 <span class="text-xs text-brand-600 group-open:rotate-180 transition-transform">▼</span>
                             </summary>
                             <p class="mt-2 text-xs text-slate-600 leading-relaxed pt-2.5 border-t border-slate-200/60">
-                                In de filterbalk kan je <strong>'Nu in de bib aanwezig'</strong> aanvinken. Klik je op een boek, dan zie je onder <em>'Exemplaren in de schoolbib'</em> per exemplaar exact of het aanwezig is op het rek of uitgeleend is (inclusief naam van de leerling, klas en inleverdatum).
+                                In de filterbalk kan je <strong>'Nu in de bib aanwezig'</strong> aanvinken. Klik je op een boek, dan zie je onder <em>'Exemplaren in de schoolbib'</em> per exemplaar exact of het aanwezig is op het rek of uitgeleend is (en voor personeel aan de balie ook wie het geleend heeft).
                             </p>
                         </details>
 
@@ -1904,7 +1904,7 @@
                             </summary>
                             <p class="mt-2 text-xs text-slate-600 leading-relaxed pt-2.5 border-t border-slate-200/60">
                                 Dat kan op twee eenvoudige manieren:<br>
-                                1. <strong>In de klas / catalogus</strong>: Open de fiche van het boek en klik op <strong>Dit boek uitlenen</strong>. Voer de code in (<code class="font-bold font-mono text-slate-800 display-teacher-pin">donbosco</code>), kies leerling en klas en bevestig.<br>
+                                1. <strong>In de klas / catalogus</strong>: Open de fiche van het boek en klik op <strong>Dit boek uitlenen</strong>. Voer de leerkrachtcode in, kies leerling en klas en bevestig.<br>
                                 2. <strong>Aan de balie</strong>: Klik in het menu op <strong>Uitleenbalie</strong> en kies de grote blauwe knop <strong>Boek Uitlenen</strong>. Selecteer het boek, kies leerling en klas en klik op <strong>Uitlening Bevestigen</strong>.
                             </p>
                         </details>
@@ -1916,7 +1916,7 @@
                             </summary>
                             <p class="mt-2 text-xs text-slate-600 leading-relaxed pt-2.5 border-t border-slate-200/60">
                                 Er zijn twee aparte rollen en toegangscodes:<br>
-                                • <strong>Leerkrachtcode (Rol 1: Uitleenbalie & snel uitlenen)</strong>: <code class="bg-slate-200 text-slate-800 px-1.5 py-0.5 rounded font-bold font-mono display-teacher-pin">donbosco</code> (voor alle leerkrachten en secretariaat).<br>
+                                • <strong>Leerkrachtcode (Rol 1: Uitleenbalie & snel uitlenen)</strong>: voor alle leerkrachten en secretariaat (zie infoblad in de lerarenkamer of vraag aan de bib-verantwoordelijke).<br>
                                 • <strong>Beheerderscode (Rol 2: Beheerderspaneel)</strong>: strikt geheim (enkel voor de twee hoofdbeheerders, in te stellen via tabblad <em>Instellingen & Sheet</em>).<br>
                                 Beheerders kunnen <strong>beide codes</strong> op elk gewenst moment aanpassen via het tabblad <strong>Instellingen & Sheet</strong>. De nieuwe codes worden automatisch centraal opgeslagen in Google Sheets.
                             </p>
@@ -3216,13 +3216,6 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
 
         // DYNAMISCH BIJHOUDEN VAN DE LEERKRACHTCODE IN DE HANDLEIDING/SNELGIDS
         function updateDisplayedPins() {
-            const tPin = currentTeacherPin || DEFAULT_TEACHER_PIN;
-
-            // Alleen de leerkrachtcode in de handleiding en snelgids voor collega's bijwerken
-            document.querySelectorAll('.display-teacher-pin').forEach(el => {
-                el.textContent = tPin;
-            });
-
             // Veiligheidsregel: GEEN codes tonen in de invoervelden of placeholders van inlogschermen!
             const deskInput = document.getElementById('deskPinInput');
             if (deskInput) {
