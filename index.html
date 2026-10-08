@@ -3194,8 +3194,7 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
         // CONFIGURATIE
         const GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRpWPRhterrkdMeJ3qZlLFshWIZ6I3yR5gIJSMNTdG_fXXAVL8YZgrK-mEDLfN5Qb3rYPamLYgMfb4K/pub?gid=534968996&single=true&output=csv";
         const DEFAULT_ADMIN_PIN = "beheerder";
-        const DEFAULT_TEACHER_PIN = "donbosco";
-        const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzs90z9O5n2GxA6ozxsWPC0uU2NYYv4xeQKmtZlBIMDi-h7pFheJZTQ3m8cR7qUs4vC3w/exec";
+        const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1hUTvKLA2erpssOz9K5KZ_8QimWu_YtTmGJ2bzmwLe2rnnEC_mF_9WQ7O-HpxbHv6SQ/exec";
 
         // STATE
         let allBooks = [];
@@ -3205,7 +3204,12 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
         let currentSort = 'default';
         let currentAdminPin = localStorage.getItem('schoolbib_admin_pin') || DEFAULT_ADMIN_PIN;
         let currentTeacherPin = localStorage.getItem('schoolbib_teacher_pin') || localStorage.getItem('schoolbib_pin') || DEFAULT_TEACHER_PIN;
-        let scriptUrl = localStorage.getItem('schoolbib_script_url') || DEFAULT_SCRIPT_URL;
+        let savedScriptUrl = localStorage.getItem('schoolbib_script_url');
+        if (!savedScriptUrl || savedScriptUrl.includes('AKfycbzs90z9O5n2GxA6ozxsWPC0uU2NYYv4xeQKmtZlBIMDi-h7pFheJZTQ3m8cR7qUs4vC3w')) {
+            savedScriptUrl = DEFAULT_SCRIPT_URL;
+            localStorage.setItem('schoolbib_script_url', DEFAULT_SCRIPT_URL);
+        }
+        let scriptUrl = savedScriptUrl;
         let loans = JSON.parse(localStorage.getItem('schoolbib_loans') || '[]');
 
         function refreshRandomCatalogSample() {
