@@ -1,0 +1,49 @@
+========================================================================
+SCHOOLBIBLIOTHEEK SINT-PIETERS - INTERN BEHEER & UITLEENBALIE
+========================================================================
+
+Dit is de private beheer- en balieapplicatie voor de schoolbibliotheek
+van Don Bosco Gent (Campus Sint-Pieters).
+
+WAAROM DIT APARTE BESTAND?
+--------------------------
+De publieke website op GitHub (gedeeld via Smartschool) is uitsluitend
+een openbare zoekcatalogus voor leerlingen. 
+
+Dit bestand ('Schoolbib-Beheer-en-Balie.html') bevat de volledige
+uitleenbalie en het beheerderspaneel. Omdat het veilig binnen jullie
+school-OneDrive/computer staat, kunnen leerlingen of buitenstaanders
+nooit bij de gegevens van leerlingen of beheerdersfuncties.
+
+HOE TE GEBRUIKEN:
+-----------------
+1. Dubbelklik op 'Schoolbib-Beheer-en-Balie.html' om het te openen in
+   je browser (Google Chrome, Microsoft Edge, etc.).
+2. Bovenaan vind je de knoppen:
+   - 'Uitleenbalie' -> Boeken ontlenen aan leerlingen (naam, klas, termijn)
+     en ingeleverde boeken weer registreren.
+   - 'Beheerder'   -> Thema in de kijker instellen, nieuwe boeken toevoegen,
+     en rapporten/statistieken bekijken en exporteren.
+   - 'Catalogus Bib' -> Boeken zoeken in de collectie.
+
+CENTRALE TOEGANGSCODES & KOPPELING MET GOOGLE SHEETS:
+------------------------------------------------------
+De toegangscodes worden centraal gesynchroniseerd met jullie Google Spreadsheet
+('SchoolbibSP - Boeken') in het tabblad 'Instellingen':
+- 'schoolbib_admin_pin'  : Geheime code voor Hoofdbeheer (Beheerderspaneel)
+- 'schoolbib_teacher_pin': Toegangscode voor leerkrachten & balie (Uitleenbalie)
+
+Voordelen van deze centrale koppeling:
+1. Wachtwoorden worden NIET enkel in lokale cookies/browseropslag bewaard.
+2. Zodra een code wordt aangepast in het Beheerderspaneel, wordt deze direct
+   weggeschreven naar de Google Sheet en geldt de nieuwe code automatisch op
+   ELKE computer (ook na het wissen van cookies, browsergeschiedenis of in incognito).
+3. Bij het inloggen controleert het systeem de code in realtime rechtstreeks bij Google Sheets.
+4. Je kunt de codes desgewenst ook rechtstreeks aanpassen in het tabblad 'Instellingen'
+   in jullie Google Spreadsheet in Google Drive.
+
+BELANGRIJK VOOR PRIVACY (GDPR):
+-------------------------------
+Deel dit bestand of deze map NOOIT met leerlingen of op een openbare website.
+De publieke catalogus blijft veilig bereikbaar via de Smartschool-link.
+========================================================================

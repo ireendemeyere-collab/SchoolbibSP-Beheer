@@ -243,25 +243,74 @@ function doGet(e) {
   var validTeacherPin = settings['schoolbib_teacher_pin'] || settings['schoolbib_pin'] || 'donbosco';
   var isAuthorized = (reqPin === validTeacherPin || reqPin === validAdminPin || reqPin === 'donbosco' || reqPin === 'beheerder');
 
-  // Actie A: 100% ANONIEME STATUS VOOR DE PUBLIEKE CATALOGUS (LEERLINGEN)
-  // Geen pincode nodig. Bevat GEEN namen, GEEN klassen, GEEN datums.
-  if (action === 'get_public_status' || action === 'get_public_loans') {
-    var loansSheet = ss.getSheetByName("Uitleningen");
-    var activeLoans = [];
-    if (loansSheet) {
-      var data = loansSheet.getDataRange().getValues();
-      for (var i = 1; i < data.length; i++) {
-        var row = data[i];
-        if (!row[4]) continue;
-        var isReturned = (row[9] && row[9].toString().toLowerCase().indexOf('ingeleverd') !== -1);
-        if (!isReturned) {
-          activeLoans.push({
-            bookTitle: row[4].toString().trim(),
-            copyLabel: row[5] ? row[5].toString().trim() : 'Exemplaar 1'
-          });
+  // Actie 0: Pincode verifiëren (voor inloggen vanaf elk willekeurig toestel of na wissen van cookies)
+  if (action === 'verify_pin') {
+    if (reqPin && (reqPin === validAdminPin || reqPin === 'beheerder')) {
+      return createJsonResponse({ 
+        status: 'success', 
+        role: 'admin', 
+        valid: true, 
+        message: 'Beheerderscode geldig',
+        settings: settings 
+      });
+    }
+    if (reqPin && (reqPin === validTeacherPin || reqPin === 'donbosco')) {
+      return createJsonResponse({ 
+        status: 'success', 
+        role: 'teacher', 
+        valid: true, 
+        message: 'Leerkrachtcode geldig',
+        settings: settings 
+      });
+    }
+    return createJsonResponse({ 
+      status: 'unauthorized', 
+      valid: false, 
+      message: 'Pincode onjuist. Probeer opnieuw.' 
+    });
+  }
+
+  // Actie 0B: Instelling opslaan via GET (zorgt voor directe bevestiging in de browser via CORS)
+  if (action === 'save_setting') {
+    var key = (e && e.parameter && e.parameter.key ? e.parameter.key.toString().trim() : '');
+    var val = (e && e.parameter && e.parameter.value !== undefined ? e.parameter.value.toString() : '');
+    if (!isAuthorized) {
+      return createJsonResponse({ status: 'unauthorized', message: 'Geen bevoegdheid om instellingen aan te passen.' });
+    }
+    if (key) {
+      var sSheet = getOrCreateSettingsSheet(ss);
+      var sRows = sSheet.getDataRange().getValues();
+      var updated = false;
+
+      for (var sr = 1; sr < sRows.length; sr++) {
+        if (sRows[sr][0] && sRows[sr][0].toString() === key) {
+          sSheet.getRange(sr + 1, 2).setValue(val);
+          sSheet.getRange(sr + 1, 3).setValue(new Date());
+          updated = true;
+          break;
         }
       }
+      if (!updated) {
+        sSheet.appendRow([key, val, new Date()]);
+      }
+      return createJsonResponse({ status: 'success', message: 'Instelling succesvol opgeslagen in Google Sheet' });
     }
+  }
+
+  // Actie A: 100% ANONIEME STATUS VOOR DE PUBLIEKE CATALOGUS (LEERLINGEN)
+  var loansSheet = findLoansSheet(ss);
+  var allParsedLoans = parseLoansSheetData(loansSheet);
+
+  if (action === 'get_public_status' || action === 'get_public_loans') {
+    var activeLoans = [];
+    allParsedLoans.forEach(function(l) {
+      if (!l.returned && l.bookTitle) {
+        activeLoans.push({
+          bookTitle: l.bookTitle,
+          copyLabel: l.copyLabel || 'Exemplaar 1'
+        });
+      }
+    });
     return createJsonResponse({ status: 'success', activeLoans: activeLoans });
   }
 
@@ -278,30 +327,7 @@ function doGet(e) {
     }
 
     try {
-      var loansSheet = ss.getSheetByName("Uitleningen");
-      var loans = [];
-      if (loansSheet) {
-        var data = loansSheet.getDataRange().getValues();
-        for (var i = 1; i < data.length; i++) {
-          var row = data[i];
-          if (!row[0] && !row[4]) continue;
-          
-          loans.push({
-            id: row[0] ? row[0].toString() : '',
-            createdAt: row[1] ? row[1].toString() : '',
-            student: row[2] ? row[2].toString() : '',
-            klas: row[3] ? row[3].toString() : '',
-            bookTitle: row[4] ? row[4].toString() : '',
-            copyLabel: row[5] ? row[5].toString() : 'Exemplaar 1',
-            copyLoc: row[6] ? row[6].toString() : '',
-            loanDate: formatCellDate(row[7]),
-            dueDate: formatCellDate(row[8]),
-            returned: (row[9] && row[9].toString().toLowerCase().indexOf('ingeleverd') !== -1),
-            returnDate: formatCellDate(row[10]),
-            condition: row[11] ? row[11].toString() : (row[9] && row[9].toString().indexOf('(') !== -1 ? row[9].toString() : '')
-          });
-        }
-      }
+      var loans = allParsedLoans;
 
       // Beoordelingen ophalen
       var ratings = {};
@@ -355,8 +381,24 @@ function doGet(e) {
   return createJsonResponse({ status: 'active', message: 'Schoolbib API is actief!' });
 }
 
+function findLoansSheet(ss) {
+  var sheetNames = ["Uitleningen", "uitleningen", "Leningen", "leningen", "Ontleningen", "ontleningen", "Uitgeleend", "uitgeleend", "Uitleenbalie", "Uitlenen"];
+  for (var sn = 0; sn < sheetNames.length; sn++) {
+    var sh = ss.getSheetByName(sheetNames[sn]);
+    if (sh) return sh;
+  }
+  var allSheets = ss.getSheets();
+  for (var i = 0; i < allSheets.length; i++) {
+    var name = allSheets[i].getName().toLowerCase();
+    if ((name.indexOf('leen') !== -1 || name.indexOf('ontleen') !== -1) && name.indexOf('instelling') === -1 && name.indexOf('boek') === -1) {
+      return allSheets[i];
+    }
+  }
+  return null;
+}
+
 function getOrCreateLoansSheet(ss) {
-  var sheet = ss.getSheetByName("Uitleningen");
+  var sheet = findLoansSheet(ss);
   if (!sheet) {
     sheet = ss.insertSheet("Uitleningen");
     sheet.appendRow([
@@ -393,3 +435,74 @@ function createJsonResponse(data) {
     .createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
 }
+
+/**
+ * Leest uitleningen uit een willekeurig blad en herkent kolommen flexibel op basis van kopteksten
+ */
+function parseLoansSheetData(sheet) {
+  if (!sheet) return [];
+  var rows = sheet.getDataRange().getValues();
+  if (!rows || rows.length <= 1) return [];
+
+  // Bepaal de kolomindexen op basis van de eerste rij (kopteksten)
+  var headerRow = rows[0];
+  var colMap = {};
+  for (var c = 0; c < headerRow.length; c++) {
+    var h = (headerRow[c] || '').toString().toLowerCase().trim();
+    if (!h) continue;
+    if (h === 'id' || h === 'uitleen id' || h === 'leen id') colMap.id = c;
+    else if (h.indexOf('leerling') !== -1 || h.indexOf('student') !== -1 || h.indexOf('ontlener') !== -1 || h === 'naam') colMap.student = c;
+    else if (h.indexOf('klas') !== -1 || h.indexOf('groep') !== -1) colMap.klas = c;
+    else if (h.indexOf('boektitel') !== -1 || h.indexOf('titel') !== -1 || h === 'boek') colMap.bookTitle = c;
+    else if (h.indexOf('exemplaar') !== -1 || h.indexOf('copy') !== -1) colMap.copyLabel = c;
+    else if (h.indexOf('locatie') !== -1 || h.indexOf('standplaats') !== -1 || h.indexOf('kast') !== -1) colMap.copyLoc = c;
+    else if (h.indexOf('werkelijke') !== -1 || h.indexOf('teruggebracht op') !== -1 || h.indexOf('ingeleverd op') !== -1) colMap.returnDate = c;
+    else if (h.indexOf('uitleendatum') !== -1 || h.indexOf('uitgeleend op') !== -1) colMap.loanDate = c;
+    else if (h.indexOf('inleverdatum') !== -1 || h.indexOf('vervaldatum') !== -1 || h.indexOf('uiterste') !== -1 || h.indexOf('due') !== -1) colMap.dueDate = c;
+    else if (h === 'datum' || h === 'tijdstip') { if (colMap.loanDate === undefined) colMap.loanDate = c; }
+    else if (h === 'status' || h === 'toestand' || h === 'staat') colMap.status = c;
+    else if (h.indexOf('staat van het boek') !== -1 || h.indexOf('schade') !== -1 || h.indexOf('conditie') !== -1) colMap.condition = c;
+  }
+
+  var loans = [];
+  for (var r = 1; r < rows.length; r++) {
+    var row = rows[r];
+    var hasData = row.some(function(cell) { return cell !== '' && cell !== null && cell !== undefined; });
+    if (!hasData) continue;
+
+    var id = colMap.id !== undefined ? String(row[colMap.id] || '') : String(row[0] || r);
+    var student = colMap.student !== undefined ? String(row[colMap.student] || '').trim() : String(row[2] || '').trim();
+    var klas = colMap.klas !== undefined ? String(row[colMap.klas] || '').trim() : String(row[3] || '').trim();
+    var bookTitle = colMap.bookTitle !== undefined ? String(row[colMap.bookTitle] || '').trim() : String(row[4] || '').trim();
+    var copyLabel = colMap.copyLabel !== undefined ? String(row[colMap.copyLabel] || '').trim() : String(row[5] || 'Exemplaar 1').trim();
+    var copyLoc = colMap.copyLoc !== undefined ? String(row[colMap.copyLoc] || '').trim() : String(row[6] || '').trim();
+    var loanDate = colMap.loanDate !== undefined ? formatCellDate(row[colMap.loanDate]) : formatCellDate(row[7] || row[1]);
+    var dueDate = colMap.dueDate !== undefined ? formatCellDate(row[colMap.dueDate]) : formatCellDate(row[8]);
+    
+    var statusVal = colMap.status !== undefined ? String(row[colMap.status] || '').toLowerCase().trim() : String(row[9] || '').toLowerCase().trim();
+    var returnDateVal = colMap.returnDate !== undefined ? formatCellDate(row[colMap.returnDate]) : formatCellDate(row[10]);
+    
+    // Bepaal of het boek ingeleverd is of nog actief uitgeleend
+    var isReturned = statusVal.indexOf('ingeleverd') !== -1 || statusVal.indexOf('terug') !== -1 || statusVal === 'ja' || statusVal === 'true';
+
+    var condition = colMap.condition !== undefined ? String(row[colMap.condition] || '').trim() : String(row[11] || 'Goed').trim();
+
+    if (bookTitle || student) {
+      loans.push({
+        id: id || String(new Date().getTime() + r),
+        student: student,
+        klas: klas,
+        bookTitle: bookTitle,
+        copyLabel: copyLabel || 'Exemplaar 1',
+        copyLoc: copyLoc,
+        loanDate: loanDate,
+        dueDate: dueDate,
+        returned: isReturned,
+        returnDate: returnDateVal,
+        condition: condition
+      });
+    }
+  }
+  return loans;
+}
+
