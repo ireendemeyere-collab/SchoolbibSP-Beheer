@@ -2,15 +2,17 @@
  * Google Apps Script voor SchoolbibSP & SchoolbibSP-Beheer
  * Schoolbibliotheek Don Bosco Gent campus Sint-Pieters
  * 
- * INSTRUCTIES VOOR EENMALIGE INSTELLING / UPDATE IN GOOGLE DRIVE:
+ * VEILIGE SERVER-SIDE IMPLEMENTATIE (GDPR & AUTHENTICATIE)
+ * 
+ * INSTRUCTIES VOOR UPDATE IN GOOGLE DRIVE:
  * 1. Open je Google Spreadsheet ('SchoolbibSP - Boeken') in je browser.
  * 2. Klik in het bovenmenu op: Extensies > Apps Script.
  * 3. Wis eventuele bestaande code in het venster en plak deze volledige bijgewerkte code erin.
  * 4. Klik op 'Opslaan' (het diskette-icoontje bovenaan).
- * 5. Klik rechtsboven op de blauwe knop: 'Implementeren' (Deploy) > 'Beheer implementaties' (Manage deployments).
+ * 5. Klik rechtsboven op: 'Implementeren' (Deploy) > 'Beheer implementaties' (Manage deployments).
  * 6. Klik op het potlood-icoontje (Bewerken), kies bij Versie: 'Nieuwe versie' en klik op 'Implementeren'.
- *    (Of maak bij een eerste keer: 'Nieuwe implementatie' > Type: 'Web-app' > Toegang: 'Iedereen').
- * 7. Kopieer de Web-app URL (eindigend op /exec) en bewaar deze.
+ *    (Toegang: 'Iedereen' / Anyone).
+ * 7. Klaar! De Web-app URL blijft hetzelfde of kopieer de actieve URL.
  */
 
 function doPost(e) {
@@ -30,8 +32,15 @@ function doPost(e) {
       data = e.parameter || {};
     }
 
-    // Actie 1: Sterrenbeoordeling van leerling opslaan
-    if (data.action === 'rate') {
+    var action = (data.action ? data.action.toString().trim() : '');
+
+    // =========================================================================
+    // 1. PUBLIEKE ACTIES (Voor leerlingen in de openbare catalogus)
+    // Geen pincode vereist.
+    // =========================================================================
+
+    // Publieke actie 1: Sterrenbeoordeling van leerling opslaan
+    if (action === 'rate') {
       var reviewsSheet = ss.getSheetByName("Beoordelingen");
       if (!reviewsSheet) {
         reviewsSheet = ss.insertSheet("Beoordelingen");
@@ -45,9 +54,41 @@ function doPost(e) {
       ]);
       return createJsonResponse({ status: 'success', message: 'Beoordeling opgeslagen!' });
     }
-    
-    // Actie 2: Nieuwe uitlening registreren in centrale spreadsheet
-    if (data.action === 'save_loan') {
+
+    // Publieke actie 2: Aankoopsuggestie van leerling of leerkracht opslaan
+    if (action === 'suggest_purchase') {
+      var suggestSheet = ss.getSheetByName("Aankoopsuggesties");
+      if (!suggestSheet) {
+        suggestSheet = ss.insertSheet("Aankoopsuggesties");
+        suggestSheet.appendRow(["Tijdstip", "Naam", "Klas", "Titel", "Auteur", "Reden aanbeveling", "Status"]);
+        suggestSheet.setFrozenRows(1);
+      }
+      suggestSheet.appendRow([
+        new Date(),
+        data.naam ? data.naam.toString().trim() : '',
+        data.klas ? data.klas.toString().trim() : '',
+        data.titel ? data.titel.toString().trim() : '',
+        data.auteur ? data.auteur.toString().trim() : '',
+        data.reden ? data.reden.toString().trim() : '',
+        'Nieuw'
+      ]);
+      return createJsonResponse({ status: 'success', message: 'Aankoopsuggestie opgeslagen in Google Sheet!' });
+    }
+
+    // =========================================================================
+    // 2. BEVEILIGDE ACTIES (Voor leerkrachten, secretariaat en beheerders)
+    // Strikte server-side authenticatie vereist!
+    // =========================================================================
+    var auth = verifyAuth(ss, data.pin);
+    if (!auth.authorized) {
+      return createJsonResponse({ 
+        status: 'unauthorized', 
+        message: 'Toegang geweigerd: geldige pincode ontbreekt of is onjuist.' 
+      });
+    }
+
+    // Beveiligde actie 3: Nieuwe uitlening registreren (leerkracht of beheerder)
+    if (action === 'save_loan') {
       var loansSheet = getOrCreateLoansSheet(ss);
       loansSheet.appendRow([
         data.id ? data.id.toString() : new Date().getTime().toString(),
@@ -66,8 +107,8 @@ function doPost(e) {
       return createJsonResponse({ status: 'success', message: 'Uitlening succesvol opgeslagen in Google Sheet!' });
     }
 
-    // Actie 3: Boek markeren als ingeleverd in centrale spreadsheet
-    if (data.action === 'return_loan') {
+    // Beveiligde actie 4: Boek markeren als ingeleverd (leerkracht of beheerder)
+    if (action === 'return_loan') {
       var loansSheet = getOrCreateLoansSheet(ss);
       var rows = loansSheet.getDataRange().getValues();
       var found = false;
@@ -95,8 +136,8 @@ function doPost(e) {
       });
     }
 
-    // Actie 4: Uitlening verwijderen uit historiek
-    if (data.action === 'delete_loan') {
+    // Beveiligde actie 5: Uitlening verwijderen uit historiek (leerkracht of beheerder)
+    if (action === 'delete_loan') {
       var loansSheet = getOrCreateLoansSheet(ss);
       var rows = loansSheet.getDataRange().getValues();
       var targetId = data.id ? data.id.toString() : '';
@@ -110,8 +151,18 @@ function doPost(e) {
       return createJsonResponse({ status: 'success', message: 'Uitlening verwijderd uit Google Sheet.' });
     }
 
-    // Actie 5: Centrale instelling opslaan (PIN, uitleentermijn, klassen)
-    if (data.action === 'save_setting') {
+    // =========================================================================
+    // 3. STRIKTE BEHEERDERSACTIES (Uitsluitend Hoofdbeheerder: role === 'admin')
+    // =========================================================================
+    if (auth.role !== 'admin') {
+      return createJsonResponse({ 
+        status: 'unauthorized', 
+        message: 'Uitsluitend de hoofdbeheerder is bevoegd voor deze actie.' 
+      });
+    }
+
+    // Beheerdersactie 6: Centrale instelling opslaan (PIN, uitleentermijn, thema's)
+    if (action === 'save_setting') {
       var settingsSheet = getOrCreateSettingsSheet(ss);
       var sRows = settingsSheet.getDataRange().getValues();
       var key = data.key ? data.key.toString().trim() : '';
@@ -132,27 +183,7 @@ function doPost(e) {
       return createJsonResponse({ status: 'success', message: 'Instelling opgeslagen in Google Sheet' });
     }
 
-    // Actie 6: Aankoopsuggestie van leerling of leerkracht opslaan
-    if (data.action === 'suggest_purchase') {
-      var suggestSheet = ss.getSheetByName("Aankoopsuggesties");
-      if (!suggestSheet) {
-        suggestSheet = ss.insertSheet("Aankoopsuggesties");
-        suggestSheet.appendRow(["Tijdstip", "Naam", "Klas", "Titel", "Auteur", "Reden aanbeveling", "Status"]);
-        suggestSheet.setFrozenRows(1);
-      }
-      suggestSheet.appendRow([
-        new Date(),
-        data.naam ? data.naam.toString().trim() : '',
-        data.klas ? data.klas.toString().trim() : '',
-        data.titel ? data.titel.toString().trim() : '',
-        data.auteur ? data.auteur.toString().trim() : '',
-        data.reden ? data.reden.toString().trim() : '',
-        'Nieuw'
-      ]);
-      return createJsonResponse({ status: 'success', message: 'Aankoopsuggestie opgeslagen in Google Sheet!' });
-    }
-
-    // Actie 7: Nieuw boek / exemplaren toevoegen aan de catalogus
+    // Beheerdersactie 7: Nieuw boek / exemplaren toevoegen aan de catalogus
     var sheet = ss.getSheetByName("Boeken") || ss.getActiveSheet();
     var count = data.aantal ? Math.max(1, parseInt(data.aantal, 10)) : 1;
     var startCopyNum = data.startCopyNum ? parseInt(data.startCopyNum, 10) : 1;
@@ -225,42 +256,16 @@ function doGet(e) {
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  // 1. Instellingen ophalen
-  var settings = {};
-  var settingsSheet = ss.getSheetByName("Instellingen");
-  if (settingsSheet) {
-    var sData = settingsSheet.getDataRange().getValues();
-    for (var s = 1; s < sData.length; s++) {
-      var k = sData[s][0] ? sData[s][0].toString().trim() : '';
-      if (k) {
-        settings[k] = sData[s][1] ? sData[s][1].toString() : '';
-      }
-    }
-  }
-
-  // Toegestane pincodes voor beheer/balie
-  var validAdminPin = settings['schoolbib_admin_pin'] || 'beheerder';
-  var validTeacherPin = settings['schoolbib_teacher_pin'] || settings['schoolbib_pin'] || 'donbosco';
-  var isAuthorized = (reqPin === validTeacherPin || reqPin === validAdminPin || reqPin === 'donbosco' || reqPin === 'beheerder');
-
-  // Actie 0: Pincode verifiëren (voor inloggen vanaf elk willekeurig toestel of na wissen van cookies)
+  // Actie 0: Pincode verifiëren (bij inloggen)
   if (action === 'verify_pin') {
-    if (reqPin && (reqPin === validAdminPin || reqPin === 'beheerder')) {
+    var auth = verifyAuth(ss, reqPin);
+    if (auth.authorized) {
       return createJsonResponse({ 
         status: 'success', 
-        role: 'admin', 
+        role: auth.role, 
         valid: true, 
-        message: 'Beheerderscode geldig',
-        settings: settings 
-      });
-    }
-    if (reqPin && (reqPin === validTeacherPin || reqPin === 'donbosco')) {
-      return createJsonResponse({ 
-        status: 'success', 
-        role: 'teacher', 
-        valid: true, 
-        message: 'Leerkrachtcode geldig',
-        settings: settings 
+        message: auth.role === 'admin' ? 'Beheerderscode geldig' : 'Leerkrachtcode geldig',
+        settings: getSanitizedSettings(getSettingsMap(ss)) // Geen wachtwoorden in JSON-output!
       });
     }
     return createJsonResponse({ 
@@ -270,13 +275,14 @@ function doGet(e) {
     });
   }
 
-  // Actie 0B: Instelling opslaan via GET (zorgt voor directe bevestiging in de browser via CORS)
+  // Actie 0B: Instelling opslaan via GET (uitsluitend Hoofdbeheerder 'admin')
   if (action === 'save_setting') {
-    var key = (e && e.parameter && e.parameter.key ? e.parameter.key.toString().trim() : '');
-    var val = (e && e.parameter && e.parameter.value !== undefined ? e.parameter.value.toString() : '');
-    if (!isAuthorized) {
+    var auth = verifyAuth(ss, reqPin);
+    if (!auth.authorized || auth.role !== 'admin') {
       return createJsonResponse({ status: 'unauthorized', message: 'Geen bevoegdheid om instellingen aan te passen.' });
     }
+    var key = (e && e.parameter && e.parameter.key ? e.parameter.key.toString().trim() : '');
+    var val = (e && e.parameter && e.parameter.value !== undefined ? e.parameter.value.toString() : '');
     if (key) {
       var sSheet = getOrCreateSettingsSheet(ss);
       var sRows = sSheet.getDataRange().getValues();
@@ -298,6 +304,7 @@ function doGet(e) {
   }
 
   // Actie A: 100% ANONIEME STATUS VOOR DE PUBLIEKE CATALOGUS (LEERLINGEN)
+  // Bevat GEEN namen, GEEN klassen, GEEN datums (GDPR-veilig).
   var loansSheet = findLoansSheet(ss);
   var allParsedLoans = parseLoansSheetData(loansSheet);
 
@@ -316,8 +323,8 @@ function doGet(e) {
 
   // Actie B: UITLENINGEN & BEHEERDER OPHALEN (BEVEILIGD VOOR PERSONEEL)
   if (action === 'get_loans' || action === 'get_all_data') {
-    // GDPR-beveiliging: geef persoonsgegevens ALLEEN terug als de geldige pincode is meegegeven
-    if (!isAuthorized) {
+    var auth = verifyAuth(ss, reqPin);
+    if (!auth.authorized) {
       return createJsonResponse({ 
         status: 'unauthorized', 
         message: 'Toegang geweigerd: pincode ontbreekt of is onjuist.', 
@@ -366,10 +373,12 @@ function doGet(e) {
         }
       }
 
+      var settings = getSettingsMap(ss);
+
       return createJsonResponse({ 
         status: 'success', 
         loans: loans, 
-        settings: settings, 
+        settings: getSanitizedSettings(settings), // Wachtwoorden gecensureerd
         ratings: ratings,
         suggestions: suggestions
       });
@@ -379,6 +388,67 @@ function doGet(e) {
   }
 
   return createJsonResponse({ status: 'active', message: 'Schoolbib API is actief!' });
+}
+
+// =============================================================================
+// VEILIGHEIDS- EN HELPERFUNCTIES
+// =============================================================================
+
+/**
+ * Haalt alle instellingen op uit het tabblad 'Instellingen' in een key-value object
+ */
+function getSettingsMap(ss) {
+  var settings = {};
+  var settingsSheet = ss.getSheetByName("Instellingen");
+  if (settingsSheet) {
+    var sData = settingsSheet.getDataRange().getValues();
+    for (var s = 1; s < sData.length; s++) {
+      var k = sData[s][0] ? sData[s][0].toString().trim() : '';
+      if (k) {
+        settings[k] = sData[s][1] ? sData[s][1].toString() : '';
+      }
+    }
+  }
+  return settings;
+}
+
+/**
+ * Filtert wachtwoorden en geheime sleutels weg zodat ze NOOIT in browser-responses belanden
+ */
+function getSanitizedSettings(settings) {
+  var safe = {};
+  for (var k in settings) {
+    if (k !== 'schoolbib_admin_pin' && k !== 'schoolbib_teacher_pin' && k !== 'schoolbib_pin') {
+      safe[k] = settings[k];
+    }
+  }
+  return safe;
+}
+
+/**
+ * Controleert de meegegeven pincode server-side
+ * Zodra er een eigen code is ingesteld in Google Sheets, vervallen alle standaard backdoors!
+ */
+function verifyAuth(ss, reqPin) {
+  if (!reqPin) return { authorized: false, role: null };
+  var cleanReq = reqPin.toString().trim();
+  var settings = getSettingsMap(ss);
+
+  var customAdminPin = settings['schoolbib_admin_pin'] ? settings['schoolbib_admin_pin'].toString().trim() : '';
+  var customTeacherPin = settings['schoolbib_teacher_pin'] ? settings['schoolbib_teacher_pin'].toString().trim() : (settings['schoolbib_pin'] ? settings['schoolbib_pin'].toString().trim() : '');
+
+  // Als er een eigen code staat in de sheet, is UITSLUITEND die code geldig!
+  // Alleen als er nog NOOIT een code is ingesteld (lege sheet), geldt de initiële default.
+  var validAdminPin = customAdminPin || 'beheerder';
+  var validTeacherPin = customTeacherPin || 'donbosco';
+
+  if (cleanReq === validAdminPin) {
+    return { authorized: true, role: 'admin' };
+  }
+  if (cleanReq === validTeacherPin) {
+    return { authorized: true, role: 'teacher' };
+  }
+  return { authorized: false, role: null };
 }
 
 function findLoansSheet(ss) {
@@ -505,4 +575,3 @@ function parseLoansSheetData(sheet) {
   }
   return loans;
 }
-

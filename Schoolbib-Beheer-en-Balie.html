@@ -5474,19 +5474,7 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
 
                     if (!pin) return;
 
-                    // 1. Snelle lokale controle
-                    if (pin === currentTeacherPin || pin === currentAdminPin) {
-                        sessionStorage.setItem('schoolbib_desk_logged_in', 'true');
-                        if (errEl) errEl.classList.add('hidden');
-                        resetPasswordInput('modalTeacherPinInput', 'btnToggleModalTeacherPin', 'w-4 h-4');
-                        teacherPinModal.close();
-                        if (currentModalBook) {
-                            openQuickLoanModal(currentModalBook);
-                        }
-                        return;
-                    }
-
-                    // 2. Online verificatie rechtstreeks met de Google Sheet
+                    // Online verificatie rechtstreeks met de Google Sheet
                     const origText = submitBtn ? submitBtn.innerHTML : '';
                     if (submitBtn) {
                         submitBtn.disabled = true;
@@ -6144,27 +6132,41 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
             document.getElementById('adminToDeskBtn')?.addEventListener('click', showDesk);
         }
 
-        // CENTRALE AUTHENTICATIE: LOKAAL + ONLINE GOOGLE SHEET VERIFICATIE
+        // BEVEILIGING: RATE LIMITING TEGEN BRUTE-FORCE RAAD-AANVALLEN
+        let failedPinAttempts = 0;
+        let pinLockoutUntil = 0;
+
+        function checkBruteForceLockout() {
+            if (Date.now() < pinLockoutUntil) {
+                const remaining = Math.ceil((pinLockoutUntil - Date.now()) / 1000);
+                return `Te veel foutieve pogingen. Beveiligingspauze actief: wacht nog ${remaining} seconden.`;
+            }
+            return null;
+        }
+
+        function registerFailedPinAttempt() {
+            failedPinAttempts++;
+            if (failedPinAttempts >= 5) {
+                pinLockoutUntil = Date.now() + 30000; // 30 seconden blokkade
+                failedPinAttempts = 0;
+                return 30;
+            }
+            return 0;
+        }
+
+        // CENTRALE AUTHENTICATIE: STRIKTE SERVER-SIDE GOOGLE SHEET VERIFICATIE
         async function verifyAndAuthenticatePin(enteredPin, requiredRole) {
             const cleanPin = (enteredPin || '').trim();
             if (!cleanPin) return { success: false, message: 'Voer een code in.' };
 
-            // 1. Directe lokale match in geheugen
-            const isAdmin = (cleanPin === currentAdminPin);
-            const isTeacher = (cleanPin === currentTeacherPin);
-            
-            if (requiredRole === 'admin') {
-                if (isAdmin) return { success: true, role: 'admin' };
-            } else {
-                if (isAdmin || isTeacher) return { success: true, role: isAdmin ? 'admin' : 'teacher' };
-            }
+            const lockoutMsg = checkBruteForceLockout();
+            if (lockoutMsg) return { success: false, message: lockoutMsg };
 
-            // 2. Direct online verifiëren met Google Sheet
             const activeScriptUrl = localStorage.getItem('schoolbib_script_url') || scriptUrl;
             if (!activeScriptUrl) {
                 return { 
                     success: false, 
-                    message: requiredRole === 'admin' ? 'Beheerderscode onjuist.' : 'Leerkrachtcode onjuist.' 
+                    message: 'Geen Google Apps Script URL ingesteld.' 
                 };
             }
 
@@ -6175,19 +6177,15 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
                 const data = await resp.json();
 
                 if (data && data.status === 'success') {
-                    // Update actieve codes direct met gegevens uit de Google Sheet
+                    failedPinAttempts = 0;
+                    pinLockoutUntil = 0;
+
+                    // Bewaar de geverifieerde sessie en rol VEILIG in sessionStorage
+                    sessionStorage.setItem('schoolbib_auth_role', data.role);
+                    sessionStorage.setItem('schoolbib_auth_pin', cleanPin);
+
                     if (data.settings && typeof applySettingsFromCloud === 'function') {
                         applySettingsFromCloud(data.settings);
-                    } else {
-                        if (data.role === 'admin') {
-                            currentAdminPin = cleanPin;
-                            localStorage.setItem('schoolbib_admin_pin', cleanPin);
-                        } else {
-                            currentTeacherPin = cleanPin;
-                            localStorage.setItem('schoolbib_teacher_pin', cleanPin);
-                            localStorage.setItem('schoolbib_pin', cleanPin);
-                        }
-                        updateDisplayedPins();
                     }
 
                     if (requiredRole === 'admin') {
@@ -6202,6 +6200,10 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
                         return { success: true, role: data.role || 'teacher' };
                     }
                 } else {
+                    const cooldown = registerFailedPinAttempt();
+                    if (cooldown > 0) {
+                        return { success: false, message: `5 onjuiste pogingen. Toegang 30 seconden geblokkeerd.` };
+                    }
                     return { 
                         success: false, 
                         message: requiredRole === 'admin' ? 'Beheerderscode onjuist. Probeer opnieuw.' : 'Leerkrachtcode onjuist. Probeer opnieuw.' 
@@ -6211,7 +6213,7 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
                 console.warn('Online verificatie via Google Sheet niet mogelijk:', err);
                 return { 
                     success: false, 
-                    message: requiredRole === 'admin' ? 'Beheerderscode onjuist (of Google Sheet offline).' : 'Pincode onjuist (of Google Sheet offline).' 
+                    message: 'Kan niet verbinden met Google Sheet. Controleer internetverbinding.' 
                 };
             }
         }
@@ -6229,19 +6231,15 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
                     const val = pinInput.value.trim();
                     if (!val) return;
 
-                    // 1. Directe lokale check als de actieve code overeenkomt
-                    if (val === currentTeacherPin || val === currentAdminPin) {
-                        sessionStorage.setItem('schoolbib_desk_logged_in', 'true');
-                        if (pinError) pinError.classList.add('hidden');
-                        pinInput.value = '';
-                        document.getElementById('deskLoginSection')?.classList.add('hidden');
-                        document.getElementById('deskDashboardSection')?.classList.remove('hidden');
-                        if (typeof switchDeskSubView === 'function') switchDeskSubView('home');
-                        renderLoans();
+                    const lockout = checkBruteForceLockout();
+                    if (lockout) {
+                        if (pinError) {
+                            pinError.textContent = lockout;
+                            pinError.classList.remove('hidden');
+                        }
                         return;
                     }
 
-                    // 2. Direct online verifiëren met Google Sheet
                     const submitBtn = form.querySelector('button[type="submit"]');
                     const origText = submitBtn ? submitBtn.innerHTML : '';
                     if (submitBtn) {
@@ -6278,6 +6276,8 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
                 logoutBtn.addEventListener('click', () => {
                     sessionStorage.removeItem('schoolbib_desk_logged_in');
                     sessionStorage.removeItem('schoolbib_admin_logged_in');
+                    sessionStorage.removeItem('schoolbib_auth_role');
+                    sessionStorage.removeItem('schoolbib_auth_pin');
                     document.getElementById('deskDashboardSection')?.classList.add('hidden');
                     document.getElementById('deskLoginSection')?.classList.remove('hidden');
                     resetPasswordInput('deskPinInput', 'btnToggleDeskPin', 'w-5 h-5');
@@ -6298,19 +6298,15 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
                     const val = pinInput.value.trim();
                     if (!val) return;
 
-                    // 1. Directe lokale check
-                    if (val === currentAdminPin) {
-                        sessionStorage.setItem('schoolbib_admin_logged_in', 'true');
-                        sessionStorage.setItem('schoolbib_desk_logged_in', 'true');
-                        if (pinError) pinError.classList.add('hidden');
-                        pinInput.value = '';
-                        resetPasswordInput('adminPinInput', 'btnToggleAdminPin', 'w-5 h-5');
-                        document.getElementById('adminLoginSection')?.classList.add('hidden');
-                        document.getElementById('adminDashboardSection')?.classList.remove('hidden');
+                    const lockout = checkBruteForceLockout();
+                    if (lockout) {
+                        if (pinError) {
+                            pinError.textContent = lockout;
+                            pinError.classList.remove('hidden');
+                        }
                         return;
                     }
 
-                    // 2. Direct online verifiëren met Google Sheet
                     const submitBtn = loginForm.querySelector('button[type="submit"]');
                     const origText = submitBtn ? submitBtn.innerHTML : '';
                     if (submitBtn) {
@@ -6346,6 +6342,8 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
             if (logoutBtn) {
                 logoutBtn.addEventListener('click', () => {
                     sessionStorage.removeItem('schoolbib_admin_logged_in');
+                    sessionStorage.removeItem('schoolbib_auth_role');
+                    sessionStorage.removeItem('schoolbib_auth_pin');
                     document.getElementById('adminDashboardSection')?.classList.add('hidden');
                     document.getElementById('adminLoginSection')?.classList.remove('hidden');
                     resetPasswordInput('adminPinInput', 'btnToggleAdminPin', 'w-5 h-5');
@@ -6972,6 +6970,8 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
                             mode: 'no-cors',
                             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                             body: JSON.stringify({
+                                action: 'add_book',
+                                pin: sessionStorage.getItem('schoolbib_auth_pin') || currentAdminPin || DEFAULT_ADMIN_PIN,
                                 titel: newBook.Titel,
                                 auteur: newBook.Auteur,
                                 tags: newBook.Tags,
@@ -7152,7 +7152,7 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
         async function syncSettingToCloud(key, value) {
             const activeScriptUrl = localStorage.getItem('schoolbib_script_url') || scriptUrl;
             if (!activeScriptUrl) return { success: false, message: 'Geen Google Apps Script URL ingesteld' };
-            const authPin = currentAdminPin || currentTeacherPin || DEFAULT_TEACHER_PIN;
+            const authPin = sessionStorage.getItem('schoolbib_auth_pin') || currentAdminPin || DEFAULT_ADMIN_PIN;
 
             // 1. Probeer eerst via GET (zodat de browser het JSON-antwoord met CORS kan verifiëren)
             try {
@@ -7195,7 +7195,7 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
             try {
                 updateLoanSyncBadge('syncing', 'Synchroniseren met Google Sheet...');
                 const sep = activeScriptUrl.includes('?') ? '&' : '?';
-                const activePin = currentTeacherPin || currentAdminPin || DEFAULT_TEACHER_PIN;
+                const activePin = sessionStorage.getItem('schoolbib_auth_pin') || currentTeacherPin || currentAdminPin || DEFAULT_TEACHER_PIN;
                 const resp = await fetch(`${activeScriptUrl}${sep}action=get_all_data&pin=${encodeURIComponent(activePin)}&_t=${Date.now()}`);
                 if (!resp.ok) throw new Error(`HTTP error ${resp.status}`);
                 const data = await resp.json();
@@ -7251,13 +7251,14 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
         async function syncLoanToCloud(action, payload) {
             const activeScriptUrl = localStorage.getItem('schoolbib_script_url') || scriptUrl;
             if (!activeScriptUrl) return;
+            const authPin = sessionStorage.getItem('schoolbib_auth_pin') || currentTeacherPin || currentAdminPin || DEFAULT_TEACHER_PIN;
             try {
                 updateLoanSyncBadge('syncing', 'Bezig met opslaan naar Google Sheet...');
                 await fetch(activeScriptUrl, {
                     method: 'POST',
                     mode: 'no-cors',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ action: action, pin: currentTeacherPin || currentAdminPin || DEFAULT_TEACHER_PIN, ...payload })
+                    body: JSON.stringify({ action: action, pin: authPin, ...payload })
                 });
                 updateLoanSyncBadge('synced', 'Gesynchroniseerd met Google Sheet ✓');
             } catch (e) {
