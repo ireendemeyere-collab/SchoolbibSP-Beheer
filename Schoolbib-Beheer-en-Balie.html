@@ -590,9 +590,9 @@
                         </svg>
                         <span>Handleiding Balie ↗</span>
                     </a>
-                    <button id="deskLogoutBtn" class="text-xs sm:text-sm font-extrabold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 hover:border-rose-300 transition flex items-center gap-2 px-4 py-2 rounded-xl shadow-xs cursor-pointer ml-1" title="Balie vergrendelen en uitloggen">
-                        <svg class="w-4 h-4 text-rose-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
-                        <span>Uitloggen</span>
+                    <button id="deskLogoutBtn" class="text-xs sm:text-sm font-extrabold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 hover:border-slate-300 transition flex items-center gap-2 px-3.5 py-2 rounded-xl shadow-2xs cursor-pointer ml-1" title="Balie sluiten en terugkeren naar de catalogus">
+                        <svg class="w-4 h-4 text-slate-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                        <span>Naar catalogus</span>
                     </button>
                 </div>
             </div>
@@ -3375,6 +3375,11 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
         }
 
         document.addEventListener('DOMContentLoaded', () => {
+            // Cloudflare Zero Trust: Geauthenticeerde leerkrachten hebben direct balietoegang
+            sessionStorage.setItem('schoolbib_desk_logged_in', 'true');
+            if (!sessionStorage.getItem('schoolbib_auth_pin')) {
+                sessionStorage.setItem('schoolbib_auth_pin', currentTeacherPin || DEFAULT_TEACHER_PIN);
+            }
             cleanDemoRatings();
             initNavigation();
             initDeskAuth();
@@ -6096,17 +6101,16 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
                 if (adminView) adminView.classList.add('hidden');
                 setNavActive('desk');
 
-                const isDeskAuth = sessionStorage.getItem('schoolbib_desk_logged_in') === 'true' || sessionStorage.getItem('schoolbib_admin_logged_in') === 'true';
-                if (isDeskAuth) {
-                    document.getElementById('deskLoginSection')?.classList.add('hidden');
-                    document.getElementById('deskDashboardSection')?.classList.remove('hidden');
-                    if (typeof switchDeskSubView === 'function') switchDeskSubView('home');
-                    renderLoans();
-                } else {
-                    document.getElementById('deskLoginSection')?.classList.remove('hidden');
-                    document.getElementById('deskDashboardSection')?.classList.add('hidden');
-                    document.getElementById('deskPinInput')?.focus();
+                // Cloudflare Zero Trust: Geauthenticeerde leerkrachten hebben direct balietoegang
+                sessionStorage.setItem('schoolbib_desk_logged_in', 'true');
+                if (!sessionStorage.getItem('schoolbib_auth_pin')) {
+                    sessionStorage.setItem('schoolbib_auth_pin', currentTeacherPin || DEFAULT_TEACHER_PIN);
                 }
+
+                document.getElementById('deskLoginSection')?.classList.add('hidden');
+                document.getElementById('deskDashboardSection')?.classList.remove('hidden');
+                if (typeof switchDeskSubView === 'function') switchDeskSubView('home');
+                renderLoans();
             }
 
             function showAdmin() {
@@ -6274,13 +6278,7 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
 
             if (logoutBtn) {
                 logoutBtn.addEventListener('click', () => {
-                    sessionStorage.removeItem('schoolbib_desk_logged_in');
-                    sessionStorage.removeItem('schoolbib_admin_logged_in');
-                    sessionStorage.removeItem('schoolbib_auth_role');
-                    sessionStorage.removeItem('schoolbib_auth_pin');
-                    document.getElementById('deskDashboardSection')?.classList.add('hidden');
-                    document.getElementById('deskLoginSection')?.classList.remove('hidden');
-                    resetPasswordInput('deskPinInput', 'btnToggleDeskPin', 'w-5 h-5');
+                    showCatalog();
                 });
             }
         }
@@ -7269,23 +7267,11 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
 
         function handleBookLoanButtonClick(book) {
             currentQuickLoanBook = book;
-            const isAuthorized = sessionStorage.getItem('schoolbib_desk_logged_in') === 'true' || sessionStorage.getItem('schoolbib_admin_logged_in') === 'true';
-            if (isAuthorized) {
-                // Balie of beheerder is reeds geauthenticeerd op deze computer
-                openQuickLoanModal(book);
-            } else {
-                // Nog niet ingelogd op deze computer: vraag eerst de verificatiecode
-                const pinModal = document.getElementById('teacherPinAuthModal');
-                const pinInput = document.getElementById('modalTeacherPinInput');
-                const errEl = document.getElementById('modalTeacherPinError');
-                if (pinInput) pinInput.value = '';
-                resetPasswordInput('modalTeacherPinInput', 'btnToggleModalTeacherPin', 'w-4 h-4');
-                if (errEl) errEl.classList.add('hidden');
-                if (pinModal) {
-                    pinModal.showModal();
-                    if (pinInput) pinInput.focus();
-                }
+            sessionStorage.setItem('schoolbib_desk_logged_in', 'true');
+            if (!sessionStorage.getItem('schoolbib_auth_pin')) {
+                sessionStorage.setItem('schoolbib_auth_pin', currentTeacherPin || DEFAULT_TEACHER_PIN);
             }
+            openQuickLoanModal(book);
         }
 
         function openQuickLoanModal(book) {
