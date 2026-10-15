@@ -3665,6 +3665,19 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
 
                     allBooks = Array.from(bookMap.values());
 
+                    // Voeg recent lokaal toegevoegde boeken samen (overbrugt de 15 min Google CSV cache-vertraging)
+                    try {
+                        const savedCustom = JSON.parse(localStorage.getItem('schoolbib_custom_books') || '[]');
+                        if (Array.isArray(savedCustom) && savedCustom.length > 0) {
+                            savedCustom.forEach(cb => {
+                                const exists = allBooks.some(b => b.Titel.toLowerCase().trim() === (cb.Titel || '').toLowerCase().trim());
+                                if (!exists) {
+                                    allBooks.push(cb);
+                                }
+                            });
+                        }
+                    } catch (e) {}
+
                     initFilters();
                     updateFavoritesCount();
                     renderFeaturedTheme();
@@ -6953,6 +6966,13 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
                         : `${addCount} exemplaren (Exemplaar 1 t/m ${addCount})`;
                 }
 
+                // Bewaar direct lokaal zodat het boek meteen zichtbaar is bij verversen (overbrugt 15 min Google CSV vertraging)
+                try {
+                    const savedCustom = JSON.parse(localStorage.getItem('schoolbib_custom_books') || '[]');
+                    savedCustom.push(newBook);
+                    localStorage.setItem('schoolbib_custom_books', JSON.stringify(savedCustom));
+                } catch (e) {}
+
                 initFilters();
                 renderFeaturedTheme();
                 renderNewBooksShelf();
@@ -6963,13 +6983,14 @@ De spin en de sleutel,Anna Woltz,"spanning, bekroond, familie, mental health, ps
 
                 if (activeScriptUrl) {
                     try {
+                        const authPin = sessionStorage.getItem('schoolbib_auth_pin') || currentTeacherPin || currentAdminPin || DEFAULT_TEACHER_PIN;
                         await fetch(activeScriptUrl, {
                             method: 'POST',
                             mode: 'no-cors',
                             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                             body: JSON.stringify({
                                 action: 'add_book',
-                                pin: sessionStorage.getItem('schoolbib_auth_pin') || currentAdminPin || DEFAULT_ADMIN_PIN,
+                                pin: authPin,
                                 titel: newBook.Titel,
                                 auteur: newBook.Auteur,
                                 tags: newBook.Tags,
