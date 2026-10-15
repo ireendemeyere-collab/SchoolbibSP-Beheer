@@ -65,11 +65,11 @@ function doPost(e) {
       }
       suggestSheet.appendRow([
         new Date(),
-        data.naam ? data.naam.toString().trim() : '',
-        data.klas ? data.klas.toString().trim() : '',
-        data.titel ? data.titel.toString().trim() : '',
-        data.auteur ? data.auteur.toString().trim() : '',
-        data.reden ? data.reden.toString().trim() : '',
+        sanitizeCell(data.naam),
+        sanitizeCell(data.klas),
+        sanitizeCell(data.titel),
+        sanitizeCell(data.auteur),
+        sanitizeCell(data.reden),
         'Nieuw'
       ]);
       return createJsonResponse({ status: 'success', message: 'Aankoopsuggestie opgeslagen in Google Sheet!' });
@@ -91,18 +91,18 @@ function doPost(e) {
     if (action === 'save_loan') {
       var loansSheet = getOrCreateLoansSheet(ss);
       loansSheet.appendRow([
-        data.id ? data.id.toString() : new Date().getTime().toString(),
+        sanitizeCell(data.id ? data.id.toString() : new Date().getTime().toString()),
         new Date(),
-        data.student ? data.student.toString().trim() : '',
-        data.klas ? data.klas.toString().trim() : '',
-        data.bookTitle ? data.bookTitle.toString().trim() : '',
-        data.copyLabel ? data.copyLabel.toString().trim() : 'Exemplaar 1',
-        data.copyLoc ? data.copyLoc.toString().trim() : '',
+        sanitizeCell(data.student),
+        sanitizeCell(data.klas),
+        sanitizeCell(data.bookTitle),
+        sanitizeCell(data.copyLabel || 'Exemplaar 1'),
+        sanitizeCell(data.copyLoc),
         data.loanDate || new Date().toISOString().split('T')[0],
         data.dueDate || '',
         data.returned ? 'Ingeleverd' : 'Uitgeleend',
         data.returnDate || '',
-        data.condition || 'Goed'
+        sanitizeCell(data.condition || 'Goed')
       ]);
       return createJsonResponse({ status: 'success', message: 'Uitlening succesvol opgeslagen in Google Sheet!' });
     }
@@ -244,59 +244,7 @@ function doPost(e) {
       return createJsonResponse({ status: 'success', message: 'Instelling opgeslagen in Google Sheet' });
     }
 
-    var lastCol = sheet.getLastColumn();
-    var headers = [];
-    if (lastCol > 0) {
-      headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
-        return h ? h.toString().toLowerCase().trim() : '';
-      });
-    }
-
-    var colMap = {};
-    for (var c = 0; c < headers.length; c++) {
-      var h = headers[c];
-      if (h === 'titel' || h === 'title') colMap.titel = c;
-      else if (h === 'auteur' || h === 'author') colMap.auteur = c;
-      else if (h === 'tags' || h === 'tag' || h === 'thema' || h === 'themas') colMap.tags = c;
-      else if (h === 'locatie' || h === 'standplaats' || h === 'kast') colMap.locatie = c;
-      else if (h.indexOf('goodreads') !== -1 || h.indexOf('info') !== -1 || h.indexOf('weblink') !== -1) colMap.goodreads = c;
-      else if (h === 'graad' || h === 'leeftijd') colMap.graad = c;
-      else if (h === 'isbn' || h === 'barcode') colMap.isbn = c;
-      else if (h.indexOf('cover') !== -1 || h.indexOf('afbeelding') !== -1) colMap.cover = c;
-      else if (h.indexOf('exemplaar') !== -1 || h.indexOf('exemplaren') !== -1 || h === 'copy') colMap.exemplaar = c;
-    }
-
-    var hasHeaders = Object.keys(colMap).length > 0;
-    for (var i = 0; i < count; i++) {
-      var currentCopyNum = (copyNumbers && copyNumbers[i] !== undefined) ? copyNumbers[i] : (startCopyNum + i);
-      if (hasHeaders) {
-        var row = new Array(headers.length).fill('');
-        if (colMap.titel !== undefined) row[colMap.titel] = data.titel ? data.titel.toString().trim() : '';
-        if (colMap.auteur !== undefined) row[colMap.auteur] = data.auteur ? data.auteur.toString().trim() : '';
-        if (colMap.tags !== undefined) row[colMap.tags] = data.tags ? data.tags.toString().trim() : '';
-        if (colMap.locatie !== undefined) row[colMap.locatie] = data.locatie ? data.locatie.toString().trim() : '';
-        if (colMap.goodreads !== undefined) row[colMap.goodreads] = data.goodreads ? data.goodreads.toString().trim() : '';
-        if (colMap.graad !== undefined) row[colMap.graad] = data.graad ? data.graad.toString().trim() : '';
-        if (colMap.isbn !== undefined) row[colMap.isbn] = data.isbn ? data.isbn.toString().trim() : '';
-        if (colMap.cover !== undefined) row[colMap.cover] = data.cover ? data.cover.toString().trim() : '';
-        if (colMap.exemplaar !== undefined) row[colMap.exemplaar] = currentCopyNum;
-        sheet.appendRow(row);
-      } else {
-        sheet.appendRow([
-          data.titel ? data.titel.toString().trim() : '',
-          data.auteur ? data.auteur.toString().trim() : '',
-          data.tags ? data.tags.toString().trim() : '',
-          data.locatie ? data.locatie.toString().trim() : '',
-          data.goodreads ? data.goodreads.toString().trim() : '',
-          data.graad ? data.graad.toString().trim() : '',
-          data.isbn ? data.isbn.toString().trim() : '',
-          data.cover ? data.cover.toString().trim() : '',
-          currentCopyNum
-        ]);
-      }
-    }
-    
-    return createJsonResponse({ status: 'success', message: 'Boek succesvol opgeslagen in Google Sheet!' });
+    return createJsonResponse({ status: 'unknown_action', message: 'Ongeldige of niet-ondersteunde actie.' });
       
   } catch (error) {
     return createJsonResponse({ status: 'error', message: error.toString() });
@@ -553,6 +501,19 @@ function formatCellDate(val) {
     return y + '-' + m + '-' + d;
   }
   return val.toString().trim();
+}
+
+/**
+ * Beveiliging tegen CSV/Spreadsheet Formula Injection.
+ * Voorkomt dat kwaadwillige invoer die begint met =, +, -, of @ als formule wordt geëvalueerd.
+ */
+function sanitizeCell(val) {
+  if (val === null || val === undefined) return '';
+  var str = val.toString().trim();
+  if (/^[=+\-@]/.test(str)) {
+    return "'" + str;
+  }
+  return str;
 }
 
 function createJsonResponse(data) {
